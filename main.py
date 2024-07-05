@@ -37,7 +37,7 @@ async def start_bot(token):
 
             # Forward messages
             if json_data:
-                target_channel_id = 123456789  # Replace with your target channel ID
+                target_channel_id = -1002079646989  # Replace with your target channel ID
                 await forward_messages(client, json_data, target_channel_id)
                 await message.reply_text("Done ✅")
 
