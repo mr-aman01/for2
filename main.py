@@ -1,120 +1,95 @@
-import json
-import os
-import time
 import asyncio
+import json
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait, PeerIdInvalid
-from pyrogram.types import Message
-from config import Config
+from config import BOT_TOKENS  # Import BOT_TOKENS from config.py
 
-# Initialize the bot clients
-bot1 = Client(
-    "forward_bot1",
-    bot_token=Config.BOT_TOKEN1,
-    api_id=Config.API_ID,
-    api_hash=Config.API_HASH
-)
+# Load JSON data from file
+def load_json_data(file_name):
+    with open(file_name, "r") as file:
+        data = json.load(file)
+    return data
 
-bot2 = Client(
-    "forward_bot2",
-    bot_token=Config.BOT_TOKEN2,
-    api_id=Config.API_ID,
-    api_hash=Config.API_HASH
-)
+# Function to forward messages
+async def forward_messages(bot, messages, target_channel_id):
+    try:
+        # Send the batch name as the first message to the target channel and pin it
+        batch_name = messages[0]["batch"]
+        pinned_message = await bot.send_message(target_channel_id, f"Batch: {batch_name}")
 
-bot3 = Client(
-    "forward_bot3",
-    bot_token=Config.BOT_TOKEN3,
-    api_id=Config.API_ID,
-    api_hash=Config.API_HASH
-)
+        try:
+            await bot.pin_chat_message(target_channel_id, pinned_message.message_id)
+        except Exception as e:
+            print(f"Failed to pin message: {e}")
+        
+        # Forward the messages to the target channel
+        for msg in messages:
+            while True:
+                try:
+                    await bot.get_chat(target_channel_id)  # Ensure the bot has met the target channel
+                    await bot.copy_message(
+                        chat_id=target_channel_id,
+                        from_chat_id=msg["chatid"],
+                        message_id=msg["msgid"]
+                    )
+                    break
+                except FloodWait as e:
+                    print(f"Rate limit exceeded. Waiting for {e.value} seconds.")
+                    await asyncio.sleep(e.value)
+                except PeerIdInvalid as e:
+                    print(f"Failed to forward message ID {msg['msgid']}: Peer ID invalid.")
+                    break
+                except Exception as e:
+                    print(f"Failed to forward message ID {msg['msgid']}: {e}")
+                    break
+        print("Done forwarding messages.")
+    except Exception as e:
+        print(f"Error during message forwarding: {e}")
 
-# List of bots for round-robin
-bots = [bot1, bot2, bot3]
+# Initialize clients for each bot token
+clients = [Client(f"bot_{i+1}", bot_token=token) for i, token in enumerate(BOT_TOKENS)]
 
-# Store the loaded messages and the file name
-messages = []
-file_name = ""
+# Command to trigger message forwarding
+@Client.on_message(filters.command("forward") & filters.private)
+async def handle_forward_command(client, message):
+    try:
+        # Check if a JSON file is attached
+        if not message.document or not message.document.file_name.endswith(".json"):
+            await message.reply_text("Please upload a JSON file.")
+            return
+        
+        # Download and read the JSON data
+        json_file = await message.download()
+        messages = load_json_data(json_file)
 
-# Load the JSON data from the uploaded file
-async def load_json_data(file_path):
-    global messages, file_name
-    with open(file_path, "r") as file:
-        messages = json.load(file)
-    file_name = os.path.basename(file_path)
+        # Ask for the target channel ID where messages should be forwarded
+        target_channel_msg = await message.reply_text("Enter the target channel ID where you want to forward the messages:")
+        response = await client.ask(target_channel_msg.chat.id, "Provide the target channel ID:")
+        target_channel_id = int(response.text.strip())
 
-# Command to start the bot
-@bot1.on_message(filters.command("start") & filters.user(Config.AUTH_USERS))
-async def start(client, message):
-    await message.reply_text("Bot started! Use /forward to begin forwarding messages.")
+        # Determine which bot to use based on the modulo operation
+        bot_index = 0
+        for msg in messages:
+            current_bot = clients[bot_index]
+            await forward_messages(current_bot, [msg], target_channel_id)
+            bot_index = (bot_index + 1) % len(clients)
 
-# Command to initiate forwarding
-@bot1.on_message(filters.command("forward") & filters.user(Config.AUTH_USERS))
-async def forward_messages(client, message):
-    await message.reply_text("Please upload the JSON file.")
-    
-    # Wait for the user to upload the JSON file
-    @bot1.on_message(filters.document & filters.user(Config.AUTH_USERS))
-    async def handle_document(client, document_message):
-        if document_message.document.file_name.endswith(".json"):
-            file_path = await document_message.download()
-            await load_json_data(file_path)  # Load the JSON data from the file
+        await message.reply_text("Done ✅")
+    except Exception as e:
+        await message.reply_text(f"Error: {e}")
 
-            # Send the file name to the target channel
-            await message.reply_text(f"File '{document_message.document.file_name}' received. Send the channel ID where you want to forward the messages:")
-            
-            os.remove(file_path)  # Clean up the file after loading
+# Start all clients
+async def start_clients():
+    for client in clients:
+        await client.start()
 
-            # Wait for the user to reply with the target channel ID
-            @bot1.on_message(filters.text & filters.user(Config.AUTH_USERS))
-            async def handle_channel_id(client, channel_id_message):
-                target_channel_id = int(channel_id_message.text)
-                
-                await message.reply_text("Forwarding messages...")
-
-                # Send the batch name as the first message to the target channel and pin it
-                batch_name = messages[0]["batch"]
-                pinned_message = await bot1.send_message(target_channel_id, f"Batch: {batch_name}")
-                await bot1.pin_chat_message(target_channel_id, pinned_message.message_id)
-
-                # Forward the messages to the target channel
-                bot_index = 0
-                for msg in messages:
-                    current_bot = bots[bot_index]
-                    while True:
-                        try:
-                            await current_bot.get_chat(target_channel_id)  # Ensure the bot has met the target channel
-                            await current_bot.copy_message(
-                                chat_id=target_channel_id,
-                                from_chat_id=msg["chatid"],
-                                message_id=msg["msgid"]
-                            )
-                            break
-                        except FloodWait as e:
-                            await message.reply_text(f"Rate limit exceeded. Waiting for {e.value} seconds.")
-                            await asyncio.sleep(e.value)
-                        except PeerIdInvalid as e:
-                            await message.reply_text(f"Failed to forward message ID {msg['msgid']}: Peer ID invalid.")
-                            break
-                        except Exception as e:
-                            await message.reply_text(f"Failed to forward message ID {msg['msgid']}: {e}")
-                            break
-                    bot_index = (bot_index + 1) % len(bots)
-
-                await client.send_message(target_channel_id, "Done ✅")
-                await message.reply_text("Done forwarding messages.")
-                # Remove the inner handler after use
-                bot1.remove_handler(handle_channel_id)
-
-        else:
-            await message.reply_text("Uploaded file is not a JSON file. Please try again.")
-        # Remove the inner handler after use
-        bot1.remove_handler(handle_document)
-
-# Start the bots
-bot1.start()
-bot2.start()
-bot3.start()
-
-# Run the main event loop
-asyncio.get_event_loop().run_forever()
+# Run the clients
+if __name__ == "__main__":
+    try:
+        asyncio.get_event_loop().run_until_complete(start_clients())
+        asyncio.get_event_loop().run_forever()
+    except KeyboardInterrupt:
+        print("\nStopping...")
+    finally:
+        for client in clients:
+            asyncio.get_event_loop().run_until_complete(client.stop())
