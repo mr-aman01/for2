@@ -3,7 +3,7 @@ import os
 import time
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.errors import FloodWait
+from pyrogram.errors import FloodWait, PeerIdInvalid
 from pyrogram.types import Message
 from config import Config
 
@@ -72,8 +72,10 @@ async def forward_messages(client, message):
                 
                 await message.reply_text("Forwarding messages...")
 
-                # Send the file name as the first message to the target channel
-                await bot1.send_message(target_channel_id, f"Forwarding messages from '{file_name}'")
+                # Send the batch name as the first message to the target channel and pin it
+                batch_name = messages[0]["batch"]
+                pinned_message = await bot1.send_message(target_channel_id, f"Batch: {batch_name}")
+                await bot1.pin_chat_message(target_channel_id, pinned_message.message_id)
 
                 # Forward the messages to the target channel
                 bot_index = 0
@@ -91,6 +93,9 @@ async def forward_messages(client, message):
                         except FloodWait as e:
                             await message.reply_text(f"Rate limit exceeded. Waiting for {e.value} seconds.")
                             await asyncio.sleep(e.value)
+                        except PeerIdInvalid as e:
+                            await message.reply_text(f"Failed to forward message ID {msg['msgid']}: Peer ID invalid.")
+                            break
                         except Exception as e:
                             await message.reply_text(f"Failed to forward message ID {msg['msgid']}: {e}")
                             break
