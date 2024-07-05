@@ -104,5 +104,3 @@ bot3.start()
 
 # Keep the script running
 bot1.idle()
-bot2.idle()
-bot3.idle()
