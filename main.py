@@ -57,10 +57,12 @@ async def forward_messages(client, message):
         if document_message.document.file_name.endswith(".json"):
             file_path = await document_message.download()
             await load_json_data(file_path)  # Load the JSON data from the file
+
+            # Send the file name to the target channel
+            await message.reply_text(f"File '{document_message.document.file_name}' received. Send the channel ID where you want to forward the messages:")
+            
             os.remove(file_path)  # Clean up the file after loading
 
-            await message.reply_text("Send the channel ID where you want to forward the messages:")
-            
             # Wait for the user to reply with the target channel ID
             @bot1.on_message(filters.text & filters.user(Config.AUTH_USERS))
             async def handle_channel_id(client, channel_id_message):
@@ -89,6 +91,7 @@ async def forward_messages(client, message):
                             break
                     bot_index = (bot_index + 1) % len(bots)
 
+                await client.send_message(target_channel_id, "Done ✅")
                 await message.reply_text("Done forwarding messages.")
                 # Remove the inner handler after use
                 bot1.remove_handler(handle_channel_id)
