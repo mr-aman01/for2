@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
 from pyrogram.types import Message
@@ -82,7 +83,7 @@ async def forward_messages(client, message):
                             break
                         except FloodWait as e:
                             await message.reply_text(f"Rate limit exceeded. Waiting for {e.value} seconds.")
-                            time.sleep(e.value)
+                            await asyncio.sleep(e.value)
                         except Exception as e:
                             await message.reply_text(f"Failed to forward message ID {msg['msgid']}: {e}")
                             break
@@ -102,5 +103,5 @@ bot1.start()
 bot2.start()
 bot3.start()
 
-# Keep the script running
-bot1.idle()
+# Run the main event loop
+asyncio.get_event_loop().run_forever()
