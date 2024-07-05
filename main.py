@@ -32,14 +32,16 @@ bot3 = Client(
 # List of bots for round-robin
 bots = [bot1, bot2, bot3]
 
-# Store the loaded messages
+# Store the loaded messages and the file name
 messages = []
+file_name = ""
 
 # Load the JSON data from the uploaded file
 async def load_json_data(file_path):
-    global messages
+    global messages, file_name
     with open(file_path, "r") as file:
         messages = json.load(file)
+    file_name = os.path.basename(file_path)
 
 # Command to start the bot
 @bot1.on_message(filters.command("start") & filters.user(Config.AUTH_USERS))
@@ -69,6 +71,9 @@ async def forward_messages(client, message):
                 target_channel_id = int(channel_id_message.text)
                 
                 await message.reply_text("Forwarding messages...")
+
+                # Send the file name as the first message to the target channel
+                await bot1.send_message(target_channel_id, f"Forwarding messages from '{file_name}'")
 
                 # Forward the messages to the target channel
                 bot_index = 0
